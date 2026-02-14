@@ -2,19 +2,18 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getDb } from "./db/index.js";
-import { createTables } from "./db/migrate.js";
+import { getDb, type Db } from "./db/index";
+import { createTables } from "./db/migrate";
 import {
   addItem,
   startItem,
   finishItem,
   searchItems,
-} from "./services/items.js";
-import { addProgress } from "./services/progress.js";
-import { getStats, getCurrentDiet, getTimeline } from "./services/stats.js";
+} from "./services/items";
+import { addProgress } from "./services/progress";
+import { getStats, getCurrentDiet, getTimeline } from "./services/stats";
 
-const db = getDb(process.env["DIET_DB_PATH"]);
-createTables(db);
+let db: Db;
 
 const server = new McpServer({
   name: "info-diet-tracker",
@@ -36,9 +35,9 @@ server.registerTool("add_item", {
     tags: z.array(z.string()).optional().describe("Tags for categorization"),
     notes: z.string().optional().describe("Personal notes about this item"),
   },
-}, (args) => {
+}, async (args) => {
   try {
-    const result = addItem(db, args);
+    const result = await addItem(db, args);
     return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   } catch (error) {
     return { content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -51,9 +50,9 @@ server.registerTool("start_item", {
   inputSchema: {
     id: z.string().describe("UUID of the item to start"),
   },
-}, (args) => {
+}, async (args) => {
   try {
-    const result = startItem(db, args.id);
+    const result = await startItem(db, args.id);
     return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   } catch (error) {
     return { content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -72,9 +71,9 @@ server.registerTool("finish_item", {
       .optional()
       .describe("Rating from 1 to 5"),
   },
-}, (args) => {
+}, async (args) => {
   try {
-    const result = finishItem(db, args.id, args.rating);
+    const result = await finishItem(db, args.id, args.rating);
     return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   } catch (error) {
     return { content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -101,9 +100,9 @@ server.registerTool("search_items", {
       .optional()
       .describe("Filter by tags (matches any)"),
   },
-}, (args) => {
+}, async (args) => {
   try {
-    const result = searchItems(db, args);
+    const result = await searchItems(db, args);
     return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   } catch (error) {
     return { content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -120,9 +119,9 @@ server.registerTool("add_progress", {
       .optional()
       .describe("Date in YYYY-MM-DD format (defaults to today)"),
   },
-}, (args) => {
+}, async (args) => {
   try {
-    const result = addProgress(db, args);
+    const result = await addProgress(db, args);
     return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   } catch (error) {
     return { content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -138,9 +137,9 @@ server.registerTool("get_stats", {
       .optional()
       .describe("Time period to analyze (defaults to all)"),
   },
-}, (args) => {
+}, async (args) => {
   try {
-    const result = getStats(db, args);
+    const result = await getStats(db, args);
     return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   } catch (error) {
     return { content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -159,9 +158,9 @@ server.registerTool("get_timeline", {
       .optional()
       .describe("Number of entries to return (defaults to 20)"),
   },
-}, (args) => {
+}, async (args) => {
   try {
-    const result = getTimeline(db, args);
+    const result = await getTimeline(db, args);
     return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
   } catch (error) {
     return { content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }], isError: true };
@@ -172,8 +171,8 @@ server.registerTool("get_timeline", {
 
 server.registerResource("current-diet", "diet://current", {
   description: "Items you are currently consuming",
-}, (uri) => {
-  const current = getCurrentDiet(db);
+}, async (uri) => {
+  const current = await getCurrentDiet(db);
   return {
     contents: [{
       uri: uri.href,
@@ -185,8 +184,8 @@ server.registerResource("current-diet", "diet://current", {
 
 server.registerResource("recent-activity", "diet://activity", {
   description: "Recent activity in your info diet",
-}, (uri) => {
-  const timeline = getTimeline(db, { limit: 10 });
+}, async (uri) => {
+  const timeline = await getTimeline(db, { limit: 10 });
   return {
     contents: [{
       uri: uri.href,
@@ -206,8 +205,8 @@ server.registerPrompt("quiz-me", {
       .optional()
       .describe("Optional topic to focus the quiz on"),
   },
-}, (args) => {
-  const finished = searchItems(db, { status: "finished" });
+}, async (args) => {
+  const finished = await searchItems(db, { status: "finished" });
   const itemList = finished
     .map(
       (item) =>
@@ -240,6 +239,12 @@ Generate 5 thought-provoking questions that test comprehension, connections betw
 // --- Start ---
 
 async function main() {
+  db = getDb(
+    process.env["TURSO_DATABASE_URL"] ?? process.env["DIET_DB_PATH"],
+    process.env["TURSO_AUTH_TOKEN"],
+  );
+  await createTables(db);
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

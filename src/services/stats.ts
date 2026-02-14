@@ -1,14 +1,14 @@
 import { eq, and, gte, desc, sql, count } from "drizzle-orm";
-import { items, progressEntries } from "../db/schema.js";
-import { toItem } from "./items.js";
+import { items, progressEntries } from "../db/schema";
+import { toItem } from "./items";
 import {
   GetStatsInput,
   GetTimelineInput,
   type Item,
   type DietStats,
   type TimelineEntry,
-} from "../types/index.js";
-import type { Db } from "../db/index.js";
+} from "../types/index";
+import type { Db } from "../db/index";
 
 function getPeriodStart(period: string): string | null {
   const d = new Date();
@@ -27,7 +27,7 @@ function getPeriodStart(period: string): string | null {
   }
 }
 
-export function getStats(db: Db, input?: unknown): DietStats {
+export async function getStats(db: Db, input?: unknown): Promise<DietStats> {
   const parsed = GetStatsInput.parse(input ?? {});
   const periodStart = getPeriodStart(parsed.period);
 
@@ -36,7 +36,7 @@ export function getStats(db: Db, input?: unknown): DietStats {
     conditions.push(gte(items.finishedAt, periodStart));
   }
 
-  const finishedRows = db
+  const finishedRows = await db
     .select({ type: items.type, count: count() })
     .from(items)
     .where(and(...conditions))
@@ -48,7 +48,7 @@ export function getStats(db: Db, input?: unknown): DietStats {
     finishedByType[row.type] = row.count;
   }
 
-  const ratingRow = db
+  const ratingRow = await db
     .select({ avg: sql<number>`avg(rating)` })
     .from(items)
     .where(and(...conditions, sql`rating IS NOT NULL`))
@@ -58,7 +58,7 @@ export function getStats(db: Db, input?: unknown): DietStats {
     ? Math.round(ratingRow.avg * 10) / 10
     : null;
 
-  const finishedItems = db
+  const finishedItems = await db
     .select({ tags: items.tags })
     .from(items)
     .where(and(...conditions))
@@ -76,7 +76,8 @@ export function getStats(db: Db, input?: unknown): DietStats {
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
 
-  const totalItems = db.select({ count: count() }).from(items).get()?.count ?? 0;
+  const totalItems =
+    (await db.select({ count: count() }).from(items).get())?.count ?? 0;
   const totalFinished = Object.values(finishedByType).reduce(
     (sum, c) => sum + c,
     0,
@@ -85,8 +86,8 @@ export function getStats(db: Db, input?: unknown): DietStats {
   return { finishedByType, averageRating, topTags, totalItems, totalFinished };
 }
 
-export function getCurrentDiet(db: Db): Item[] {
-  const rows = db
+export async function getCurrentDiet(db: Db): Promise<Item[]> {
+  const rows = await db
     .select()
     .from(items)
     .where(eq(items.status, "in_progress"))
@@ -96,17 +97,20 @@ export function getCurrentDiet(db: Db): Item[] {
   return rows.map(toItem);
 }
 
-export function getTimeline(db: Db, input?: unknown): TimelineEntry[] {
+export async function getTimeline(
+  db: Db,
+  input?: unknown,
+): Promise<TimelineEntry[]> {
   const parsed = GetTimelineInput.parse(input ?? {});
 
-  const recentItems = db
+  const recentItems = await db
     .select()
     .from(items)
     .orderBy(desc(items.updatedAt))
     .limit(parsed.limit * 2)
     .all();
 
-  const recentProgress = db
+  const recentProgress = await db
     .select({
       id: progressEntries.id,
       itemId: progressEntries.itemId,

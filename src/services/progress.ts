@@ -1,13 +1,16 @@
 import { eq, asc } from "drizzle-orm";
-import { items, progressEntries } from "../db/schema.js";
-import { generateId, now, today } from "../lib/utils.js";
-import { AddProgressInput, type ProgressEntry } from "../types/index.js";
-import type { Db } from "../db/index.js";
+import { items, progressEntries } from "../db/schema";
+import { generateId, now, today } from "../lib/utils";
+import { AddProgressInput, type ProgressEntry } from "../types/index";
+import type { Db } from "../db/index";
 
-export function addProgress(db: Db, input: unknown): ProgressEntry {
+export async function addProgress(
+  db: Db,
+  input: unknown,
+): Promise<ProgressEntry> {
   const parsed = AddProgressInput.parse(input);
 
-  const item = db
+  const item = await db
     .select({ id: items.id })
     .from(items)
     .where(eq(items.id, parsed.itemId))
@@ -15,7 +18,7 @@ export function addProgress(db: Db, input: unknown): ProgressEntry {
   if (!item) throw new Error(`Item not found: ${parsed.itemId}`);
 
   const id = generateId();
-  const row = db
+  const row = await db
     .insert(progressEntries)
     .values({
       id,
@@ -27,7 +30,8 @@ export function addProgress(db: Db, input: unknown): ProgressEntry {
     .returning()
     .get();
 
-  db.update(items)
+  await db
+    .update(items)
     .set({ updatedAt: now() })
     .where(eq(items.id, parsed.itemId))
     .run();
@@ -41,8 +45,11 @@ export function addProgress(db: Db, input: unknown): ProgressEntry {
   };
 }
 
-export function getProgress(db: Db, itemId: string): ProgressEntry[] {
-  const rows = db
+export async function getProgress(
+  db: Db,
+  itemId: string,
+): Promise<ProgressEntry[]> {
+  const rows = await db
     .select()
     .from(progressEntries)
     .where(eq(progressEntries.itemId, itemId))

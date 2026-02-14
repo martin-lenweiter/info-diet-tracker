@@ -1,8 +1,8 @@
 import { sql } from "drizzle-orm";
-import type { Db } from "./index.js";
+import type { Db } from "./index";
 
-export function createTables(db: Db) {
-  db.run(sql`
+export async function createTables(db: Db) {
+  await db.run(sql`
     CREATE TABLE IF NOT EXISTS items (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -20,7 +20,7 @@ export function createTables(db: Db) {
     )
   `);
 
-  db.run(sql`
+  await db.run(sql`
     CREATE TABLE IF NOT EXISTS progress_entries (
       id TEXT PRIMARY KEY,
       item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,

@@ -1,9 +1,9 @@
 import { resolve } from "path";
 import XLSX from "xlsx";
-import { getDb } from "./index.js";
-import { createTables } from "./migrate.js";
-import { items } from "./schema.js";
-import { generateId, now } from "../lib/utils.js";
+import { getDb } from "./index";
+import { createTables } from "./migrate";
+import { items } from "./schema";
+import { generateId, now } from "../lib/utils";
 
 interface StorygraphRow {
   Title: string;
@@ -69,57 +69,65 @@ function parseGenres(raw: string): string[] {
     .filter(Boolean);
 }
 
-const xlsxPath = resolve(
-  import.meta.dirname ?? ".",
-  "../../storygraph_read_books.xlsx",
-);
+async function main() {
+  const xlsxPath = resolve(
+    import.meta.dirname ?? ".",
+    "../../storygraph_read_books.xlsx",
+  );
 
-const workbook = XLSX.readFile(xlsxPath);
-const sheet = workbook.Sheets[workbook.SheetNames[0]!]!;
-const rows = XLSX.utils.sheet_to_json<StorygraphRow>(sheet);
+  const workbook = XLSX.readFile(xlsxPath);
+  const sheet = workbook.Sheets[workbook.SheetNames[0]!]!;
+  const rows = XLSX.utils.sheet_to_json<StorygraphRow>(sheet);
 
-const db = getDb();
-createTables(db);
+  const db = getDb();
+  await createTables(db);
 
-console.log(`Importing ${rows.length} books from Storygraph...\n`);
+  console.log(`Importing ${rows.length} books from Storygraph...\n`);
 
-let imported = 0;
-let skipped = 0;
+  let imported = 0;
+  let skipped = 0;
 
-for (const row of rows) {
-  const title = row.Title?.trim();
-  if (!title) {
-    skipped++;
-    continue;
+  for (const row of rows) {
+    const title = row.Title?.trim();
+    if (!title) {
+      skipped++;
+      continue;
+    }
+
+    const finishedAt = parseFinishedDate(row["Finished Date"]);
+    const status = finishedAt ? "finished" : "backlog";
+    const tags = parseGenres(row.Genres);
+    const author = row.Author?.trim() || null;
+    const timestamp = now();
+
+    await db
+      .insert(items)
+      .values({
+        id: generateId(),
+        title,
+        type: "book",
+        author,
+        url: null,
+        status,
+        rating: null,
+        tags: JSON.stringify(tags),
+        notes: null,
+        startedAt: null,
+        finishedAt,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+      .run();
+
+    const statusLabel = status === "finished" ? `finished ${finishedAt}` : "backlog";
+    console.log(`  + ${title} (${statusLabel})`);
+    imported++;
   }
 
-  const finishedAt = parseFinishedDate(row["Finished Date"]);
-  const status = finishedAt ? "finished" : "backlog";
-  const tags = parseGenres(row.Genres);
-  const author = row.Author?.trim() || null;
-  const timestamp = now();
-
-  db.insert(items)
-    .values({
-      id: generateId(),
-      title,
-      type: "book",
-      author,
-      url: null,
-      status,
-      rating: null,
-      tags: JSON.stringify(tags),
-      notes: null,
-      startedAt: null,
-      finishedAt,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-    .run();
-
-  const statusLabel = status === "finished" ? `finished ${finishedAt}` : "backlog";
-  console.log(`  + ${title} (${statusLabel})`);
-  imported++;
+  console.log(`\nDone. Imported ${imported} books, skipped ${skipped}.`);
 }
 
-console.log(`\nDone. Imported ${imported} books, skipped ${skipped}.`);
+main().catch((error) => {
+  console.error("Import failed:", error);
+  process.exit(1);
+});

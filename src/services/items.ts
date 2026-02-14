@@ -1,6 +1,6 @@
 import { eq, and, like, desc, asc } from "drizzle-orm";
-import { items, progressEntries } from "../db/schema.js";
-import { generateId, now, today } from "../lib/utils.js";
+import { items, progressEntries } from "../db/schema";
+import { generateId, now, today } from "../lib/utils";
 import {
   AddItemInput,
   UpdateItemInput,
@@ -8,8 +8,8 @@ import {
   ListItemsInput,
   type Item,
   type ItemWithProgress,
-} from "../types/index.js";
-import type { Db } from "../db/index.js";
+} from "../types/index";
+import type { Db } from "../db/index";
 
 export function toItem(row: typeof items.$inferSelect): Item {
   return {
@@ -29,12 +29,12 @@ export function toItem(row: typeof items.$inferSelect): Item {
   };
 }
 
-export function addItem(db: Db, input: unknown): Item {
+export async function addItem(db: Db, input: unknown): Promise<Item> {
   const parsed = AddItemInput.parse(input);
   const id = generateId();
   const timestamp = now();
 
-  const row = db
+  const row = await db
     .insert(items)
     .values({
       id,
@@ -57,7 +57,11 @@ export function addItem(db: Db, input: unknown): Item {
   return toItem(row);
 }
 
-export function updateItem(db: Db, id: string, input: unknown): Item {
+export async function updateItem(
+  db: Db,
+  id: string,
+  input: unknown,
+): Promise<Item> {
   const parsed = UpdateItemInput.parse(input);
 
   const updates: Record<string, unknown> = { updatedAt: now() };
@@ -72,7 +76,7 @@ export function updateItem(db: Db, id: string, input: unknown): Item {
   if (parsed.startedAt !== undefined) updates.startedAt = parsed.startedAt;
   if (parsed.finishedAt !== undefined) updates.finishedAt = parsed.finishedAt;
 
-  const row = db
+  const row = await db
     .update(items)
     .set(updates)
     .where(eq(items.id, id))
@@ -83,11 +87,15 @@ export function updateItem(db: Db, id: string, input: unknown): Item {
   return toItem(row);
 }
 
-export function startItem(db: Db, id: string): Item {
+export async function startItem(db: Db, id: string): Promise<Item> {
   return updateItem(db, id, { status: "in_progress", startedAt: today() });
 }
 
-export function finishItem(db: Db, id: string, rating?: number): Item {
+export async function finishItem(
+  db: Db,
+  id: string,
+  rating?: number,
+): Promise<Item> {
   return updateItem(db, id, {
     status: "finished",
     finishedAt: today(),
@@ -95,15 +103,15 @@ export function finishItem(db: Db, id: string, rating?: number): Item {
   });
 }
 
-export function abandonItem(db: Db, id: string): Item {
+export async function abandonItem(db: Db, id: string): Promise<Item> {
   return updateItem(db, id, { status: "abandoned" });
 }
 
-export function getItem(db: Db, id: string): ItemWithProgress {
-  const row = db.select().from(items).where(eq(items.id, id)).get();
+export async function getItem(db: Db, id: string): Promise<ItemWithProgress> {
+  const row = await db.select().from(items).where(eq(items.id, id)).get();
   if (!row) throw new Error(`Item not found: ${id}`);
 
-  const progress = db
+  const progress = await db
     .select()
     .from(progressEntries)
     .where(eq(progressEntries.itemId, id))
@@ -122,7 +130,7 @@ export function getItem(db: Db, id: string): ItemWithProgress {
   };
 }
 
-export function searchItems(db: Db, input: unknown): Item[] {
+export async function searchItems(db: Db, input: unknown): Promise<Item[]> {
   const parsed = SearchItemsInput.parse(input);
   const conditions = [];
 
@@ -141,7 +149,7 @@ export function searchItems(db: Db, input: unknown): Item[] {
     query = query.where(and(...conditions)) as typeof query;
   }
 
-  const rows = query.orderBy(desc(items.updatedAt)).all();
+  const rows = await query.orderBy(desc(items.updatedAt)).all();
 
   let results = rows.map(toItem);
   if (parsed.tags && parsed.tags.length > 0) {
@@ -153,7 +161,7 @@ export function searchItems(db: Db, input: unknown): Item[] {
   return results;
 }
 
-export function listItems(db: Db, input?: unknown): Item[] {
+export async function listItems(db: Db, input?: unknown): Promise<Item[]> {
   const parsed = ListItemsInput.parse(input ?? {});
   const conditions = [];
 
@@ -171,7 +179,10 @@ export function listItems(db: Db, input?: unknown): Item[] {
     query = query.where(and(...conditions)) as typeof query;
   }
 
-  const rows = query.orderBy(orderMap[parsed.orderBy]).limit(parsed.limit).all();
+  const rows = await query
+    .orderBy(orderMap[parsed.orderBy])
+    .limit(parsed.limit)
+    .all();
 
   return rows.map(toItem);
 }
