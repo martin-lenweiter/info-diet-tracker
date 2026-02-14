@@ -4,7 +4,10 @@ import { addItem, startItem, finishItem } from "../services/items";
 import { addProgress } from "../services/progress";
 
 async function main() {
-  const db = getDb();
+  const db = getDb(
+    process.env["TURSO_DATABASE_URL"] ?? "file:./data/diet.db",
+    process.env["TURSO_AUTH_TOKEN"],
+  );
   await createTables(db);
 
   console.log("Seeding database...\n");
